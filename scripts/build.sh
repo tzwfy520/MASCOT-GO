@@ -19,8 +19,8 @@ BUILD_TIME=$(date '+%Y-%m-%d %H:%M:%S')
 BUILD_ID=$(date '+%Y%m%d%H%M')
 GIT_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 GO_VERSION=$(go version | awk '{print $3}')
-OUTPUT_ROOT="binaryfile"
-OUTPUT_DIR="${OUTPUT_ROOT}/${VERSION}"
+# 使用绝对路径作为输出目录（按用户要求）
+OUTPUT_DIR="/Users/wangfuyu/PythonCode/BinaryFile/SSH-GO"
 
 # 构建信息
 LDFLAGS="-X 'main.Version=${VERSION}' -X 'main.BuildTime=${BUILD_TIME}' -X 'main.GitCommit=${GIT_COMMIT}' -X 'main.GoVersion=${GO_VERSION}'"
