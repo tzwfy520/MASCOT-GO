@@ -88,3 +88,6 @@ simulate/
 
 # 测试
 test/
+
+# 二开文档
+docs/developer/

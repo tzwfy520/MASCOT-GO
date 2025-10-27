@@ -178,6 +178,11 @@ func SetupRouter(collectorService *service.CollectorService, backupService *serv
 		v1.GET("/logs/tail", logsHandler.TailLogs)
 	}
 
+	// 扩展路由钩子：允许商业版本或外部模块注册额外路由
+	if ExtraRoutesFunc != nil {
+		ExtraRoutesFunc(r)
+	}
+
 	// 404处理
 	r.NoRoute(func(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{
