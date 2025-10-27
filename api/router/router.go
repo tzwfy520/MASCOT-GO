@@ -159,6 +159,8 @@ func SetupRouter(collectorService *service.CollectorService, backupService *serv
 			simdev.GET("/:id", simDeviceCmdHandler.GetSimDeviceCmd)
 			simdev.PUT("/:id", simDeviceCmdHandler.UpdateSimDeviceCmd)
 			simdev.DELETE("/:id", simDeviceCmdHandler.DeleteSimDeviceCmd)
+			// 新增：设备命令模糊匹配接口
+			simdev.POST("/match", simDeviceCmdHandler.MatchSimDeviceCmd)
 		}
 
 		// 模拟配置管理

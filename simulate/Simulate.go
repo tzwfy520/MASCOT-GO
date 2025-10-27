@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 	"regexp"
+	"sort"
 
 	"github.com/spf13/viper"
 	"golang.org/x/crypto/ssh"
@@ -453,7 +454,7 @@ func (s *namespaceServer) handleSession(channel ssh.Channel, requests <-chan *ss
 			out := s.loadCommandOutput(s.nsName, deviceName, cmd)
 			if out == "" {
 				logger.Debug("Simulate: exec unmatched", "cmd", cmd)
-				out = "unsupportted command\r\n"
+				out = "unspport command\r\n"
 			}
 			channel.Write([]byte(out))
 			if ptyReady {
@@ -562,7 +563,7 @@ func (s *namespaceServer) runInteractiveShell(channel ssh.Channel, deviceName, p
 		if out == "" {
 			// 3) 未匹配：显示固定文案
 			logger.Debug("Simulate: command unmatched", "device", deviceName, "cmd", cmd)
-			out = "unsupportted command\r\n"
+			out = "unspport command\r\n"
 		}
 		// 2) 匹配：显示 txt 文件内容（已按 CRLF 标准化）
 		channel.Write([]byte(out))
@@ -593,60 +594,76 @@ func (s *namespaceServer) loadCommandOutput(ns, deviceName, cmd string) string {
 		logger.Debug("Simulate: load out (normalized)", "device", deviceName, "cmd", cmd, "file", p2)
 		return ensureCRLF(string(bs))
 	}
-	// 未直接命中：进入模糊匹配
+	// 未直接命中：列出候选（包含文件与数据库）
 	cands, fileMap := s.listSupportedCommands(base)
+	// 追加数据库中启用的设备命令（同一 namespace + device_name）
+	dbOut := make(map[string]string, 64)
+	if db := database.GetDB(); db != nil {
+		var rows []model.SimDeviceCommand
+		if err := db.Where("namespace = ? AND device_name = ? AND enabled = 1", ns, deviceName).Find(&rows).Error; err == nil {
+			for _, r := range rows {
+				canon := strings.TrimSpace(strings.ReplaceAll(r.Command, "_", " "))
+				if canon == "" { continue }
+				dbOut[canon] = r.Output
+				// 若不在候选中则追加
+				exists := false
+				for _, c := range cands { if strings.EqualFold(c, canon) { exists = true; break } }
+				if !exists { cands = append(cands, canon) }
+			}
+		}
+	}
 	if len(cands) == 0 {
 		logger.Debug("Simulate: no supported commands listed", "device", deviceName)
-		return "unsupportted command\r\n"
+		return "unspport command\r\n"
 	}
-	matches := fuzzyMatchCommands(cmd, cands)
-	// 追加：按词前缀的正则匹配并与原结果合并
-	prefixMatches := prefixWordMatchCommands(cmd, cands)
-	logger.Debug("Simulate: match summary", "cmd", cmd, "fuzzy_count", len(matches), "prefix_count", len(prefixMatches))
-	if len(matches) == 0 && len(prefixMatches) > 0 {
-		matches = prefixMatches
-	} else if len(prefixMatches) > 0 {
-		uniq := make(map[string]struct{}, len(matches)+len(prefixMatches))
-		merged := make([]string, 0, len(matches)+len(prefixMatches))
-		for _, m := range matches { if _, ok := uniq[m]; !ok { uniq[m] = struct{}{}; merged = append(merged, m) } }
-		for _, m := range prefixMatches { if _, ok := uniq[m]; !ok { uniq[m] = struct{}{}; merged = append(merged, m) } }
-		matches = merged
-	}
+	// 仅按词前缀匹配（大小写不敏感）
+	matches := prefixWordMatchCommands(cmd, cands)
 	if len(matches) == 0 {
-		return "unsupportted command\r\n"
+		return "unspport command\r\n"
 	}
-	if len(matches) == 1 {
-		// 单一匹配：读取对应文件
-		chosen := matches[0]
+	// 去重并排序（稳定输出）
+	uniq := make(map[string]struct{}, len(matches))
+	dedup := make([]string, 0, len(matches))
+	for _, m := range matches {
+		lm := strings.ToLower(m)
+		if _, ok := uniq[lm]; !ok {
+			uniq[lm] = struct{}{}
+			dedup = append(dedup, m)
+		}
+	}
+	sort.Slice(dedup, func(i, j int) bool { return strings.ToLower(dedup[i]) < strings.ToLower(dedup[j]) })
+
+	if len(dedup) == 1 {
+		// 单一匹配：优先读取数据库输出，其次读取文件
+		chosen := dedup[0]
+		if out, ok := dbOut[chosen]; ok && strings.TrimSpace(out) != "" {
+			return ensureCRLF(out)
+		}
 		if fp, ok := fileMap[chosen]; ok {
 			if bs, err := os.ReadFile(fp); err == nil {
-				logger.Debug("Simulate: load out (fuzzy)", "device", deviceName, "cmd", cmd, "file", fp)
+				logger.Debug("Simulate: load out (prefix)", "device", deviceName, "cmd", cmd, "file", fp)
 				return ensureCRLF(string(bs))
 			}
 		}
 		// 回退：按候选名尝试 direct/normalized
 		p3 := filepath.Join(base, fmt.Sprintf("%s.txt", chosen))
-		if bs, err := os.ReadFile(p3); err == nil {
-			return ensureCRLF(string(bs))
-		}
+		if bs, err := os.ReadFile(p3); err == nil { return ensureCRLF(string(bs)) }
 		p4 := filepath.Join(base, fmt.Sprintf("%s.txt", strings.ReplaceAll(chosen, " ", "_")))
-		if bs, err := os.ReadFile(p4); err == nil {
-			return ensureCRLF(string(bs))
-		}
-		return "unsupportted command\r\n"
+		if bs, err := os.ReadFile(p4); err == nil { return ensureCRLF(string(bs)) }
+		return "unspport command\r\n"
 	}
 	// 多个匹配：输出建议列表
 	var b strings.Builder
-	b.WriteString("which command do you mean:\r\n")
-	for _, m := range matches {
-		b.WriteString("-- ")
+	b.WriteString("which command do you mean?\r\n")
+	for _, m := range dedup {
+		b.WriteString("  -- ")
 		b.WriteString(m)
 		b.WriteString("\r\n")
 	}
 	return b.String()
 }
 
-// 列出支持命令集合：优先 supported_commands.txt，回退为扫描 *.txt 文件
+// 在交互 Shell 中，未匹配提示保持与规则一致
 func (s *namespaceServer) listSupportedCommands(base string) ([]string, map[string]string) {
 	cands := make([]string, 0, 64)
 	fileMap := make(map[string]string, 64)
@@ -684,34 +701,6 @@ func (s *namespaceServer) listSupportedCommands(base string) ([]string, map[stri
 	return cands, fileMap
 }
 
-// 正则模糊匹配（大小写不敏感；空格/下划线视为任意空白；允许包含匹配）
-func fuzzyMatchCommands(input string, cands []string) []string {
-	in := strings.TrimSpace(input)
-	if in == "" { return nil }
-	// 构造正则：转义元字符，空格/下划线替换为 \s+
-	esc := regexp.QuoteMeta(in)
-	esc = strings.ReplaceAll(esc, "_", "\\s+")
-	esc = strings.ReplaceAll(esc, " ", "\\s+")
-	pattern := "(?i).*" + esc + ".*"
-	re, err := regexp.Compile(pattern)
-	res := make([]string, 0, len(cands))
-	if err == nil {
-		for _, c := range cands {
-			if re.MatchString(c) {
-				res = append(res, c)
-			}
-		}
-		return res
-	}
-	// 回退：大小写不敏感的包含匹配
-	low := strings.ToLower(in)
-	for _, c := range cands {
-		if strings.Contains(strings.ToLower(c), low) {
-			res = append(res, c)
-		}
-	}
-	return res
-}
 
 // 新增：按词前缀的正则匹配（大小写不敏感；从命令首词开始顺序匹配）
 func prefixWordMatchCommands(input string, cands []string) []string {

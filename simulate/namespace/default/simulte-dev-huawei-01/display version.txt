@@ -1,1 +1,0 @@
-Simulate-huawei:display version

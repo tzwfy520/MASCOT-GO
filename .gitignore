@@ -85,3 +85,6 @@ data/
 
 # 模拟目录
 simulate/
+
+# 测试
+test/
