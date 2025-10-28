@@ -714,23 +714,24 @@ func (s *BackupService) ExecuteBatch(ctx context.Context, req *BackupBatchReques
 			}
 
 			// 执行命令
-			execReq := &ExecRequest{
-				DeviceIP:        dev.DeviceIP,
-				Port:            dev.Port,
-				DeviceName:      dev.DeviceName,
-				DevicePlatform:  dev.DevicePlatform,
-				CollectProtocol: dev.CollectProtocol,
-				UserName:        dev.UserName,
-				Password:        dev.Password,
-				EnablePassword:  dev.EnablePassword,
-				TaskTimeoutSec:  s.effectiveTimeout(req.TaskTimeout, dev.DevicePlatform),
-				DeviceTimeoutSec: func() int {
-					if dev.DeviceTimeout != nil && *dev.DeviceTimeout > 0 {
-						return *dev.DeviceTimeout
-					}
-					return s.effectiveTimeout(req.TaskTimeout, dev.DevicePlatform)
-				}(),
-			}
+		execReq := &ExecRequest{
+			DeviceIP:        dev.DeviceIP,
+			Port:            dev.Port,
+			DeviceName:      dev.DeviceName,
+			DevicePlatform:  dev.DevicePlatform,
+			CollectProtocol: dev.CollectProtocol,
+			UserName:        dev.UserName,
+			Password:        dev.Password,
+			EnablePassword:  dev.EnablePassword,
+			TaskTimeoutSec:  s.effectiveTimeout(req.TaskTimeout, dev.DevicePlatform),
+			DeviceTimeoutSec: func() int {
+				if dev.DeviceTimeout != nil && *dev.DeviceTimeout > 0 {
+					return *dev.DeviceTimeout
+				}
+				return s.effectiveTimeout(req.TaskTimeout, dev.DevicePlatform)
+			}(),
+			TaskID:          req.TaskID,
+		}
 
 			// 支持有限重试（请求优先，平台默认回退）
 			var results []*ssh.CommandResult

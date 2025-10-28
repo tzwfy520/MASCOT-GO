@@ -317,6 +317,7 @@ func (s *FormatService) ExecuteBatch(ctx context.Context, req *FormatBatchReques
 					EnablePassword:  dev.EnablePassword,
 					TaskTimeoutSec:   timeout,
 					DeviceTimeoutSec: devTimeout,
+					TaskID:          req.TaskID,
 				}, dev.CliList)
 				if err == nil {
 					break
@@ -555,6 +556,7 @@ func (s *FormatService) ExecuteFast(ctx context.Context, req *FormatFastRequest)
 			EnablePassword:  dev.EnablePassword,
 			TaskTimeoutSec:   timeout,
 			DeviceTimeoutSec: devTimeout,
+			TaskID:          req.TaskID,
 		}, userCmds)
 		if err == nil {
 			break

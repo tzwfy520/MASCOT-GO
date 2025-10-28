@@ -629,6 +629,7 @@ func (s *CollectorService) executeSSHCollection(ctx context.Context, request *Co
 		EnablePassword:   request.EnablePassword,
 		TaskTimeoutSec:   effTimeoutSec,
 		DeviceTimeoutSec: devTimeoutSec,
+		TaskID:           request.TaskID,
 	}
 
 	// 使用请求中的 retries 参数进行重试（至少执行一次）

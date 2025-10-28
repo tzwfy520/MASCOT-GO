@@ -15,16 +15,17 @@ import (
 
 // ExecRequest 执行器输入参数（设备连接信息）
 type ExecRequest struct {
-	DeviceIP        string
-	Port            int
-	DeviceName      string
-	DevicePlatform  string
-	CollectProtocol string // ssh
-	UserName        string
-	Password        string
-	EnablePassword  string
-	TaskTimeoutSec   int
-	DeviceTimeoutSec int
+    DeviceIP        string
+    Port            int
+    DeviceName      string
+    DevicePlatform  string
+    CollectProtocol string // ssh
+    UserName        string
+    Password        string
+    EnablePassword  string
+    TaskTimeoutSec   int
+    DeviceTimeoutSec int
+    TaskID          string
 }
 
 // InteractBasic 统一的设备基础交互入口：
@@ -104,7 +105,7 @@ func (b *InteractBasic) Execute(ctx context.Context, req *ExecRequest, userComma
             if strings.TrimSpace(req.DeviceIP) != "" { return req.DeviceIP }
             return "<unknown>"
         }())
-        logger.Info(fmt.Sprintf("task_trace: device %s 登陆 失败", dname))
+        logger.Info(fmt.Sprintf("task_id %s task_trace: device %s 登陆 失败", strings.TrimSpace(req.TaskID), dname))
         // 设备登陆阶段的超时错误，统一标注为“设备登陆失败”
         if isLoginTimeout(err) {
             return nil, fmt.Errorf("设备登陆失败")
@@ -118,7 +119,7 @@ func (b *InteractBasic) Execute(ctx context.Context, req *ExecRequest, userComma
             if strings.TrimSpace(req.DeviceIP) != "" { return req.DeviceIP }
             return "<unknown>"
         }())
-        logger.Info(fmt.Sprintf("task_trace: device %s 登陆 成功", dname))
+        logger.Info(fmt.Sprintf("task_id %s task_trace: device %s 登陆 成功", strings.TrimSpace(req.TaskID), dname))
     }
     defer b.pool.ReleaseConnection(conn)
 
@@ -257,7 +258,7 @@ func (b *InteractBasic) Execute(ctx context.Context, req *ExecRequest, userComma
                 if execOK { execResult = "成功" }
                 cmdName := strings.TrimSpace(nr.Command)
                 if cmdName == "" { cmdName = "<unknown>" }
-                logger.Info(fmt.Sprintf("task_trace: device %s 执行 %s %s", dname, cmdName, execResult))
+                logger.Info(fmt.Sprintf("task_id %s task_trace: device %s 执行 %s %s exit=%d duration_ms=%d", strings.TrimSpace(req.TaskID), dname, cmdName, execResult, nr.ExitCode, nr.Duration.Milliseconds()))
             }
         }
         return out, nil
@@ -288,7 +289,7 @@ func (b *InteractBasic) Execute(ctx context.Context, req *ExecRequest, userComma
             if execOK { execResult = "成功" }
             cmdName := strings.TrimSpace(nr.Command)
             if cmdName == "" { cmdName = "<unknown>" }
-            logger.Info(fmt.Sprintf("task_trace: device %s 执行 %s %s", dname, cmdName, execResult))
+            logger.Info(fmt.Sprintf("task_id %s task_trace: device %s 执行 %s %s exit=%d duration_ms=%d", strings.TrimSpace(req.TaskID), dname, cmdName, execResult, nr.ExitCode, nr.Duration.Milliseconds()))
         }
     }
     return out, nil
@@ -534,7 +535,7 @@ func (b *InteractBasic) EnterConfigMode(ctx context.Context, req *ExecRequest) (
                 if execOK { execResult = "成功" }
                 cmdName := strings.TrimSpace(nr.Command)
                 if cmdName == "" { cmdName = "<unknown>" }
-                logger.Info(fmt.Sprintf("task_trace: device %s 执行 %s %s", dname, cmdName, execResult))
+                logger.Info(fmt.Sprintf("task_id %s task_trace: device %s 执行 %s %s exit=%d duration_ms=%d", strings.TrimSpace(req.TaskID), dname, cmdName, execResult, nr.ExitCode, nr.Duration.Milliseconds()))
             }
         }
         return res2, nil
@@ -553,7 +554,7 @@ func (b *InteractBasic) EnterConfigMode(ctx context.Context, req *ExecRequest) (
             if execOK { execResult = "成功" }
             cmdName := strings.TrimSpace(nr.Command)
             if cmdName == "" { cmdName = "<unknown>" }
-            logger.Info(fmt.Sprintf("task_trace: device %s 执行 %s %s", dname, cmdName, execResult))
+            logger.Info(fmt.Sprintf("task_id %s task_trace: device %s 执行 %s %s exit=%d duration_ms=%d", strings.TrimSpace(req.TaskID), dname, cmdName, execResult, nr.ExitCode, nr.Duration.Milliseconds()))
         }
     }
     return res, nil
