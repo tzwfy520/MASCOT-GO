@@ -5,21 +5,12 @@
   <title>设备清单</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link rel="stylesheet" href="/static/css/nav.css" />
+  <link rel="stylesheet" href="/static/css/base.css" />
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" defer></script>
   <script src="/static/js/nav.js" defer></script>
-  <style>
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'Noto Sans', 'PingFang SC', 'Microsoft YaHei', sans-serif; margin: 20px; }
-    h1 { font-size: 20px; }
-    input, select, textarea { padding: 6px; margin: 4px 0; }
-    button { padding: 6px 12px; margin-right: 8px; }
-    table { border-collapse: collapse; width: 100%; margin-top: 12px; }
-    th, td { border: 1px solid #e5e7eb; padding: 6px; text-align: left; }
-    .row { display: flex; gap: 12px; align-items: center; }
-    .muted { color: #666; }
-    .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.35); z-index: 998; display: none; }
-    .modal { position: fixed; top: 10%; left: 50%; transform: translateX(-50%); background: #fff; border: 1px solid #e5e7eb; padding: 16px; width: 720px; max-width: 92vw; z-index: 999; box-shadow: 0 10px 20px rgba(0,0,0,0.12); }
-  </style>
 </head>
 <body>
+  <div class="container">
   <h1>设备清单</h1>
   <div class="row">
     <label>状态</label>
@@ -31,6 +22,25 @@
     <label>设备类型</label>
     <select id="type"><option value="">全部</option></select>
     <button onclick="openAdd()">新增</button>
+    <button onclick="openImport()">导入</button>
+    <button onclick="exportDevices()">导出</button>
+  </div>
+
+  <!-- 导入弹窗（Excel .xlsx） -->
+  <div id="import_modal" style="display:none; border:1px solid #e5e7eb; padding:12px; margin:12px 0;">
+    <div class="row" style="justify-content: space-between;">
+      <strong>批量导入设备</strong>
+      <button onclick="closeImportModal()">关闭</button>
+    </div>
+    <div class="row">
+      <label>Excel 文件(.xlsx)</label>
+      <input id="import_excel_file" type="file" accept=".xlsx" />
+      <button onclick="downloadImportTemplate()">模板下载</button>
+    </div>
+    <div class="row" style="justify-content:flex-end; gap:8px;">
+      <button onclick="startImportFromExcel()">开始导入</button>
+      <button onclick="closeImportModal()">取消</button>
+    </div>
   </div>
 
   <div id="add_form" style="display:none; border:1px solid #e5e7eb; padding:12px; margin:12px 0;">
@@ -93,6 +103,7 @@
     <!-- 旧新增区域已迁移到顶部折叠表单 -->
   </div>
   <p class="muted" style="display:none">如需更多字段，请后续扩展。</p>
+  </div>
 
   <script>
     // 全局分页状态
@@ -401,6 +412,172 @@
       } catch (e) {
         alert('进入编辑失败: ' + e);
       }
+    }
+
+    // ===== 批量导入/导出 =====
+    function openImport(){
+      const modal = document.getElementById('import_modal');
+      const backdrop = document.getElementById('modal_backdrop');
+      if (!modal) return;
+      modal.style.display = 'block';
+      modal.classList.add('modal');
+      if (backdrop) backdrop.style.display = 'block';
+      const fileInp = document.getElementById('import_excel_file');
+      if (fileInp) fileInp.value = '';
+    }
+
+    function closeImportModal(){
+      const modal = document.getElementById('import_modal');
+      const backdrop = document.getElementById('modal_backdrop');
+      if (!modal) return;
+      modal.style.display = 'none';
+      modal.classList.remove('modal');
+      const addForm = document.getElementById('add_form');
+      if (addForm && addForm.style.display === 'block'){
+        if (backdrop) backdrop.style.display = 'block';
+      } else {
+        if (backdrop) backdrop.style.display = 'none';
+      }
+    }
+
+    async function startImportFromExcel(){
+      try {
+        if (!window.XLSX){ alert('Excel库未加载'); return; }
+        const fileInp = document.getElementById('import_excel_file');
+        const file = fileInp && fileInp.files && fileInp.files[0];
+        if (!file){ alert('请选择Excel文件(.xlsx)'); return; }
+        const buf = await file.arrayBuffer();
+        const wb = XLSX.read(buf, { type: 'array' });
+        const sheetName = wb.SheetNames[0];
+        const ws = wb.Sheets[sheetName];
+        const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
+        const records = normalizeSheetRows(rows);
+        if (!Array.isArray(records) || records.length === 0){
+          alert('未解析到可导入的设备数据');
+          return;
+        }
+        if (!confirm('检测到 ' + records.length + ' 条设备记录，确认开始导入？')) return;
+        const results = { ok:0, fail:0 };
+        for (const r of records){
+          const body = normalizeDeviceRecord(r);
+          if (!body || !body.ip || !body.port || !body.username || !body.device_type){ results.fail++; continue; }
+          try {
+            const res = await fetch('/api/v1/devices', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+            const data = await res.json();
+            if (data && data.code === 'SUCCESS'){ results.ok++; } else { results.fail++; }
+          } catch(err){ results.fail++; }
+        }
+        alert('导入完成：成功 ' + results.ok + '，失败 ' + results.fail);
+        closeImportModal();
+        loadList();
+      } catch(err){
+        alert('导入失败：' + err);
+      }
+    }
+
+    function downloadImportTemplate(){
+      if (!window.XLSX){ alert('Excel库未加载'); return; }
+      const headers = ['name','ip','port','device_type','username','password','enable_password','remarks'];
+      const sample = ['R1','10.0.0.1',22,'huawei-vrp','admin','','','可选备注'];
+      const wb = XLSX.utils.book_new();
+      const ws = XLSX.utils.aoa_to_sheet([headers, sample]);
+      XLSX.utils.book_append_sheet(wb, ws, 'devices');
+      const ts = new Date();
+      const pad = (n) => String(n).padStart(2,'0');
+      const fname = `devices-import-template-${ts.getFullYear()}${pad(ts.getMonth()+1)}${pad(ts.getDate())}.xlsx`;
+      XLSX.writeFile(wb, fname);
+    }
+
+    function normalizeKey(k){
+      const s = String(k||'').trim().toLowerCase();
+      const map = {
+        'name':'name','设备名':'name','设备名称':'name',
+        'ip':'ip','地址':'ip',
+        'port':'port','端口':'port',
+        'device_type':'device_type','设备类型':'device_type','类型':'device_type','平台':'device_type',
+        'username':'username','用户':'username','用户名':'username','账号':'username',
+        'password':'password','密码':'password',
+        'enable_password':'enable_password','特权密码':'enable_password','enable密码':'enable_password',
+        'remarks':'remarks','备注':'remarks'
+      };
+      return map[s] || s;
+    }
+
+    function normalizeSheetRows(rows){
+      const out = [];
+      for (const row of rows){
+        const obj = {};
+        for (const [key, val] of Object.entries(row)){
+          const nk = normalizeKey(key);
+          obj[nk] = val;
+        }
+        out.push(obj);
+      }
+      return out;
+    }
+
+    function normalizeDeviceRecord(r){
+      const obj = r || {};
+      const portNum = Number(obj.port || 22);
+      return {
+        name: (obj.name||'').trim(),
+        ip: String(obj.ip||'').trim(),
+        port: isNaN(portNum)?22:portNum,
+        device_type: String(obj.device_type||'').trim(),
+        username: String(obj.username||'').trim(),
+        password: obj.password || '',
+        enable_password: obj.enable_password || '',
+        remarks: obj.remarks || ''
+      };
+    }
+
+    async function exportDevices(){
+      try {
+        const all = await fetchAllDevicesAllPages();
+        // 仅导出核心字段，避免泄露敏感信息，可按需调整
+        const data = all.map(d => ({
+          name: d.name || '',
+          ip: d.ip || '',
+          port: d.port || 22,
+          device_type: d.device_type || '',
+          username: d.username || '',
+          // 导出不包含密码，如需包含可取消注释
+          // password: d.password || '',
+          // enable_password: d.enable_password || '',
+          remarks: d.remarks || ''
+        }));
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        const ts = new Date();
+        const pad = (n) => String(n).padStart(2,'0');
+        const fname = `devices-export-${ts.getFullYear()}${pad(ts.getMonth()+1)}${pad(ts.getDate())}-${pad(ts.getHours())}${pad(ts.getMinutes())}${pad(ts.getSeconds())}.json`;
+        a.href = url; a.download = fname; a.click();
+        setTimeout(() => URL.revokeObjectURL(url), 5000);
+      } catch(err){
+        alert('导出失败：' + err);
+      }
+    }
+
+    async function fetchAllDevicesAllPages(){
+      let page = 1; const size = 100; const all = [];
+      while (true){
+        const q = new URLSearchParams();
+        const status = document.getElementById('status').value;
+        const type = document.getElementById('type').value;
+        if (status) q.set('enabled', status);
+        if (type) q.set('type', type);
+        q.set('page', String(page));
+        q.set('size', String(size));
+        const res = await fetch('/api/v1/devices?' + q.toString());
+        const data = await res.json();
+        const list = (data.data && data.data.devices) || [];
+        const pagination = (data.data && data.data.pagination) || { pages: 1 };
+        all.push(...list);
+        if (page >= (pagination.pages || 1)) break;
+        page++;
+      }
+      return all;
     }
   </script>
 </body>
