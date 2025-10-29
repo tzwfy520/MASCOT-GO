@@ -1,20 +1,22 @@
 package handler
 
 import (
-	"encoding/json"
-	"fmt"
-	"net/http"
-	"strings"
-	"time"
+    "encoding/json"
+    "fmt"
+    "net/http"
+    "os"
+    "path/filepath"
+    "strings"
+    "time"
 
-	"github.com/gin-gonic/gin"
-	"github.com/sshcollectorpro/sshcollectorpro/internal/service"
-	"github.com/sshcollectorpro/sshcollectorpro/pkg/logger"
-	"golang.org/x/sync/errgroup"
-	// 新增导入
-	"github.com/sshcollectorpro/sshcollectorpro/internal/database"
-	"github.com/sshcollectorpro/sshcollectorpro/internal/model"
-	"gorm.io/gorm"
+    "github.com/gin-gonic/gin"
+    "github.com/sshcollectorpro/sshcollectorpro/internal/service"
+    "github.com/sshcollectorpro/sshcollectorpro/pkg/logger"
+    "golang.org/x/sync/errgroup"
+    // 新增导入
+    "github.com/sshcollectorpro/sshcollectorpro/internal/database"
+    "github.com/sshcollectorpro/sshcollectorpro/internal/model"
+    "gorm.io/gorm"
 )
 
 // CollectorHandler 采集器处理器
@@ -420,11 +422,20 @@ func (h *CollectorHandler) BatchExecuteCustomer(c *gin.Context) {
 	if k > len(req.Devices) {
 		k = len(req.Devices)
 	}
-	if k <= 0 {
-		k = 1
-	}
+    if k <= 0 {
+        k = 1
+    }
 
-	responses := make([]map[string]interface{}, len(req.Devices))
+    // 生成批次级日志文件路径（任务级，不按设备）
+    batchStart := time.Now()
+    logDir := filepath.Join("logs", "collection")
+    _ = os.MkdirAll(logDir, 0o755)
+    batchLogName := fmt.Sprintf("%s_%s.log", strings.TrimSpace(req.TaskID), batchStart.Format("20060102_150405"))
+    batchLogPath := filepath.Join(logDir, batchLogName)
+    // 确保文件存在
+    if f, err := os.OpenFile(batchLogPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644); err == nil { f.Close() }
+
+    responses := make([]map[string]interface{}, len(req.Devices))
 	reqCtx := c.Request.Context()
 	sem := make(chan struct{}, k)
 	g, ctx := errgroup.WithContext(reqCtx)
@@ -496,7 +507,6 @@ func (h *CollectorHandler) BatchExecuteCustomer(c *gin.Context) {
                 "error":           resp.Error,
                 "duration_ms":     resp.DurationMS,
                 "timestamp":       resp.Timestamp,
-                "log_file_path":   resp.LogFilePath,
             }
             return nil
         })
@@ -531,12 +541,13 @@ func (h *CollectorHandler) BatchExecuteCustomer(c *gin.Context) {
 	enc := json.NewEncoder(c.Writer)
 	enc.SetEscapeHTML(false)
 	encodeStart := time.Now()
-	_ = enc.Encode(gin.H{
-		"code":    respCode,
-		"message": respMsg,
-		"data":    responses,
-		"total":   len(responses),
-	})
+    _ = enc.Encode(gin.H{
+        "code":          respCode,
+        "message":       respMsg,
+        "data":          responses,
+        "total":         len(responses),
+        "log_file_path": batchLogPath,
+    })
 	encodeDur := time.Since(encodeStart)
 	logger.Info("BatchExecuteCustomer response encoded", "path", c.FullPath(), "size_bytes", c.Writer.Size(), "duration_ms", encodeDur.Milliseconds(), "count", len(responses))
 }
@@ -583,11 +594,19 @@ func (h *CollectorHandler) BatchExecuteSystem(c *gin.Context) {
 	if k > len(req.DeviceList) {
 		k = len(req.DeviceList)
 	}
-	if k <= 0 {
-		k = 1
-	}
+    if k <= 0 {
+        k = 1
+    }
 
-	responses := make([]map[string]interface{}, len(req.DeviceList))
+    // 生成批次级日志文件路径（任务级，不按设备）
+    batchStart := time.Now()
+    logDir := filepath.Join("logs", "collection")
+    _ = os.MkdirAll(logDir, 0o755)
+    batchLogName := fmt.Sprintf("%s_%s.log", strings.TrimSpace(req.TaskID), batchStart.Format("20060102_150405"))
+    batchLogPath := filepath.Join(logDir, batchLogName)
+    if f, err := os.OpenFile(batchLogPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644); err == nil { f.Close() }
+
+    responses := make([]map[string]interface{}, len(req.DeviceList))
 	reqCtx := c.Request.Context()
 	sem := make(chan struct{}, k)
 	g, ctx := errgroup.WithContext(reqCtx)
@@ -677,7 +696,6 @@ func (h *CollectorHandler) BatchExecuteSystem(c *gin.Context) {
                 "error":           resp.Error,
                 "duration_ms":     resp.DurationMS,
                 "timestamp":       resp.Timestamp,
-                "log_file_path":   resp.LogFilePath,
             }
             return nil
         })
@@ -710,12 +728,13 @@ func (h *CollectorHandler) BatchExecuteSystem(c *gin.Context) {
 	enc := json.NewEncoder(c.Writer)
 	enc.SetEscapeHTML(false)
 	encodeStart := time.Now()
-	_ = enc.Encode(gin.H{
-		"code":    respCode,
-		"message": respMsg,
-		"data":    responses,
-		"total":   len(responses),
-	})
+    _ = enc.Encode(gin.H{
+        "code":          respCode,
+        "message":       respMsg,
+        "data":          responses,
+        "total":         len(responses),
+        "log_file_path": batchLogPath,
+    })
 	encodeDur := time.Since(encodeStart)
 	logger.Info("BatchExecuteSystem response encoded", "path", c.FullPath(), "size_bytes", c.Writer.Size(), "duration_ms", encodeDur.Milliseconds(), "count", len(responses))
 }
