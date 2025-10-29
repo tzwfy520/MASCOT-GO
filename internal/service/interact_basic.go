@@ -26,6 +26,8 @@ type ExecRequest struct {
     TaskTimeoutSec   int
     DeviceTimeoutSec int
     TaskID          string
+    // 新增：用于分类日志的类型标识（collector|backup|format|deploy 等）
+    LogType        string
 }
 
 // InteractBasic 统一的设备基础交互入口：
@@ -105,7 +107,11 @@ func (b *InteractBasic) Execute(ctx context.Context, req *ExecRequest, userComma
             if strings.TrimSpace(req.DeviceIP) != "" { return req.DeviceIP }
             return "<unknown>"
         }())
-        logger.Info(fmt.Sprintf("task_id %s task_trace: device %s 登陆 失败", strings.TrimSpace(req.TaskID), dname))
+        logger.WithFields(map[string]interface{}{
+            "log_type": strings.TrimSpace(req.LogType),
+            "task_id":  strings.TrimSpace(req.TaskID),
+            "device":   dname,
+        }).Info(fmt.Sprintf("task_trace: device %s 登陆 失败", dname))
         // 设备登陆阶段的超时错误，统一标注为“设备登陆失败”
         if isLoginTimeout(err) {
             return nil, fmt.Errorf("设备登陆失败")
@@ -119,7 +125,11 @@ func (b *InteractBasic) Execute(ctx context.Context, req *ExecRequest, userComma
             if strings.TrimSpace(req.DeviceIP) != "" { return req.DeviceIP }
             return "<unknown>"
         }())
-        logger.Info(fmt.Sprintf("task_id %s task_trace: device %s 登陆 成功", strings.TrimSpace(req.TaskID), dname))
+        logger.WithFields(map[string]interface{}{
+            "log_type": strings.TrimSpace(req.LogType),
+            "task_id":  strings.TrimSpace(req.TaskID),
+            "device":   dname,
+        }).Info(fmt.Sprintf("task_trace: device %s 登陆 成功", dname))
     }
     defer b.pool.ReleaseConnection(conn)
 
@@ -258,7 +268,15 @@ func (b *InteractBasic) Execute(ctx context.Context, req *ExecRequest, userComma
                 if execOK { execResult = "成功" }
                 cmdName := strings.TrimSpace(nr.Command)
                 if cmdName == "" { cmdName = "<unknown>" }
-                logger.Info(fmt.Sprintf("task_id %s task_trace: device %s 执行 %s %s exit=%d duration_ms=%d", strings.TrimSpace(req.TaskID), dname, cmdName, execResult, nr.ExitCode, nr.Duration.Milliseconds()))
+                logger.WithFields(map[string]interface{}{
+                    "log_type": strings.TrimSpace(req.LogType),
+                    "task_id": strings.TrimSpace(req.TaskID),
+                    "device": dname,
+                    "command": cmdName,
+                    "status": execResult,
+                    "exit_code": nr.ExitCode,
+                    "duration_ms": nr.Duration.Milliseconds(),
+                }).Info(fmt.Sprintf("task_trace: device %s 执行 %s", dname, cmdName))
             }
         }
         return out, nil
@@ -289,7 +307,15 @@ func (b *InteractBasic) Execute(ctx context.Context, req *ExecRequest, userComma
             if execOK { execResult = "成功" }
             cmdName := strings.TrimSpace(nr.Command)
             if cmdName == "" { cmdName = "<unknown>" }
-            logger.Info(fmt.Sprintf("task_id %s task_trace: device %s 执行 %s %s exit=%d duration_ms=%d", strings.TrimSpace(req.TaskID), dname, cmdName, execResult, nr.ExitCode, nr.Duration.Milliseconds()))
+            logger.WithFields(map[string]interface{}{
+                "log_type": strings.TrimSpace(req.LogType),
+                "task_id": strings.TrimSpace(req.TaskID),
+                "device": dname,
+                "command": cmdName,
+                "status": execResult,
+                "exit_code": nr.ExitCode,
+                "duration_ms": nr.Duration.Milliseconds(),
+            }).Info(fmt.Sprintf("task_trace: device %s 执行 %s", dname, cmdName))
         }
     }
     return out, nil
@@ -471,7 +497,11 @@ func (b *InteractBasic) EnterConfigMode(ctx context.Context, req *ExecRequest) (
             if strings.TrimSpace(req.DeviceIP) != "" { return req.DeviceIP }
             return "<unknown>"
         }())
-        logger.Info(fmt.Sprintf("task_trace: device %s 登陆 失败", dname))
+        logger.WithFields(map[string]interface{}{
+            "log_type": strings.TrimSpace(req.LogType),
+            "task_id": strings.TrimSpace(req.TaskID),
+            "device": dname,
+        }).Info(fmt.Sprintf("task_trace: device %s 登陆 失败", dname))
         if isLoginTimeout(err) { return nil, fmt.Errorf("设备登陆失败") }
         return nil, fmt.Errorf("failed to create SSH connection: %w", err)
     }
@@ -482,7 +512,11 @@ func (b *InteractBasic) EnterConfigMode(ctx context.Context, req *ExecRequest) (
             if strings.TrimSpace(req.DeviceIP) != "" { return req.DeviceIP }
             return "<unknown>"
         }())
-        logger.Info(fmt.Sprintf("task_trace: device %s 登陆 成功", dname))
+        logger.WithFields(map[string]interface{}{
+            "log_type": strings.TrimSpace(req.LogType),
+            "task_id": strings.TrimSpace(req.TaskID),
+            "device": dname,
+        }).Info(fmt.Sprintf("task_trace: device %s 登陆 成功", dname))
     }
     defer b.pool.ReleaseConnection(conn)
 
@@ -535,7 +569,15 @@ func (b *InteractBasic) EnterConfigMode(ctx context.Context, req *ExecRequest) (
                 if execOK { execResult = "成功" }
                 cmdName := strings.TrimSpace(nr.Command)
                 if cmdName == "" { cmdName = "<unknown>" }
-                logger.Info(fmt.Sprintf("task_id %s task_trace: device %s 执行 %s %s exit=%d duration_ms=%d", strings.TrimSpace(req.TaskID), dname, cmdName, execResult, nr.ExitCode, nr.Duration.Milliseconds()))
+                logger.WithFields(map[string]interface{}{
+                    "log_type": strings.TrimSpace(req.LogType),
+                    "task_id": strings.TrimSpace(req.TaskID),
+                    "device": dname,
+                    "command": cmdName,
+                    "status": execResult,
+                    "exit_code": nr.ExitCode,
+                    "duration_ms": nr.Duration.Milliseconds(),
+                }).Info(fmt.Sprintf("task_trace: device %s 执行 %s", dname, cmdName))
             }
         }
         return res2, nil
@@ -554,7 +596,15 @@ func (b *InteractBasic) EnterConfigMode(ctx context.Context, req *ExecRequest) (
             if execOK { execResult = "成功" }
             cmdName := strings.TrimSpace(nr.Command)
             if cmdName == "" { cmdName = "<unknown>" }
-            logger.Info(fmt.Sprintf("task_id %s task_trace: device %s 执行 %s %s exit=%d duration_ms=%d", strings.TrimSpace(req.TaskID), dname, cmdName, execResult, nr.ExitCode, nr.Duration.Milliseconds()))
+            logger.WithFields(map[string]interface{}{
+                "log_type": strings.TrimSpace(req.LogType),
+                "task_id": strings.TrimSpace(req.TaskID),
+                "device": dname,
+                "command": cmdName,
+                "status": execResult,
+                "exit_code": nr.ExitCode,
+                "duration_ms": nr.Duration.Milliseconds(),
+            }).Info(fmt.Sprintf("task_trace: device %s 执行 %s", dname, cmdName))
         }
     }
     return res, nil

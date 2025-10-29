@@ -1,17 +1,19 @@
 package service
 
 import (
-	"context"
-	"encoding/json"
-	"fmt"
-	"strings"
-	"sync"
-	"time"
+    "context"
+    "encoding/json"
+    "fmt"
+    "os"
+    "path/filepath"
+    "strings"
+    "sync"
+    "time"
 
-	"github.com/sshcollectorpro/sshcollectorpro/internal/config"
-	"github.com/sshcollectorpro/sshcollectorpro/internal/model"
-	"github.com/sshcollectorpro/sshcollectorpro/pkg/logger"
-	"github.com/sshcollectorpro/sshcollectorpro/pkg/ssh"
+    "github.com/sshcollectorpro/sshcollectorpro/internal/config"
+    "github.com/sshcollectorpro/sshcollectorpro/internal/model"
+    "github.com/sshcollectorpro/sshcollectorpro/pkg/logger"
+    "github.com/sshcollectorpro/sshcollectorpro/pkg/ssh"
 )
 
 // CollectorService 采集器服务
@@ -27,12 +29,13 @@ type CollectorService struct {
 
 // TaskContext 任务上下文
 type TaskContext struct {
-	Task                    *model.Task
-	Cancel                  context.CancelFunc
-	StartTime               time.Time
-	DeviceInteractStartTime time.Time  // 设备交互开始时间
-	DeviceInteractDuration  time.Duration // 设备交互时长
-	Status                  string
+    Task                    *model.Task
+    Cancel                  context.CancelFunc
+    StartTime               time.Time
+    DeviceInteractStartTime time.Time  // 设备交互开始时间
+    DeviceInteractDuration  time.Duration // 设备交互时长
+    Status                  string
+    LogFilePath             string
 }
 
 // CollectRequest 采集请求
@@ -57,14 +60,15 @@ type CollectRequest struct {
 
 // CollectResponse 采集响应
 type CollectResponse struct {
-	TaskID     string                 `json:"task_id"`
-	Success    bool                   `json:"success"`
-	Results    []*CommandResultView   `json:"results"`
-	Error      string                 `json:"error"`
-	Duration   time.Duration          `json:"duration"`
-	DurationMS int64                  `json:"duration_ms"`
-	Timestamp  time.Time              `json:"timestamp"`
-	Metadata   map[string]interface{} `json:"metadata"`
+    TaskID     string                 `json:"task_id"`
+    Success    bool                   `json:"success"`
+    Results    []*CommandResultView   `json:"results"`
+    Error      string                 `json:"error"`
+    Duration   time.Duration          `json:"duration"`
+    DurationMS int64                  `json:"duration_ms"`
+    Timestamp  time.Time              `json:"timestamp"`
+    Metadata   map[string]interface{} `json:"metadata"`
+    LogFilePath string                `json:"log_file_path,omitempty"`
 }
 
 // 内置交互默认值结构（替代原 addone/interact）
@@ -398,12 +402,19 @@ func (s *CollectorService) ExecuteTask(ctx context.Context, request *CollectRequ
 		return nil, fmt.Errorf("task queue wait timeout after %ds: %w", effTimeout, waitCtx.Err())
 	}
 
-	startTime := time.Now()
-	response := &CollectResponse{
-		TaskID:    request.TaskID,
-		Timestamp: startTime,
-		Metadata:  request.Metadata,
-	}
+    startTime := time.Now()
+    // 按需创建按任务日志文件：logs/collection/<task_id>_<YYYYMMDD_HHMMSS>.log
+    logDir := filepath.Join("logs", "collection")
+    _ = os.MkdirAll(logDir, 0o755)
+    logName := fmt.Sprintf("%s_%s.log", strings.TrimSpace(request.TaskID), time.Now().Format("20060102_150405"))
+    logPath := filepath.Join(logDir, logName)
+
+    response := &CollectResponse{
+        TaskID:     request.TaskID,
+        Timestamp:  startTime,
+        Metadata:   request.Metadata,
+        LogFilePath: logPath,
+    }
 
 	// 以上已解析平台与有效超时/重试
 
@@ -474,7 +485,12 @@ func (s *CollectorService) ExecuteTask(ctx context.Context, request *CollectRequ
 	// 命令为空：允许继续（将返回空结果）
 
 	// 记录命令队列
-	logger.Info("Prepared command queue", "task_id", request.TaskID, "platform", request.DevicePlatform, "commands", strings.Join(commands, ";"))
+    logger.WithFields(map[string]interface{}{
+        "log_type": "collection",
+        "task_id":  request.TaskID,
+        "platform": request.DevicePlatform,
+        "commands": strings.Join(commands, ";"),
+    }).Info("Prepared command queue")
 
 	// 创建任务记录
 	// 端口默认 22
@@ -507,13 +523,14 @@ func (s *CollectorService) ExecuteTask(ctx context.Context, request *CollectRequ
 	taskCtx, cancel := context.WithTimeout(ctx, time.Duration(timeoutAll)*time.Second)
 	defer cancel()
 
-	s.addTaskContext(request.TaskID, &TaskContext{
-		Task:                    task,
-		Cancel:                  cancel,
-		StartTime:               startTime,
-		DeviceInteractStartTime: time.Now(), // 记录设备交互开始时间
-		Status:                  "running",
-	})
+    s.addTaskContext(request.TaskID, &TaskContext{
+        Task:                    task,
+        Cancel:                  cancel,
+        StartTime:               startTime,
+        DeviceInteractStartTime: time.Now(), // 记录设备交互开始时间
+        Status:                  "running",
+        LogFilePath:             logPath,
+    })
 	defer s.removeTaskContext(request.TaskID)
 
 	// 记录设备交互开始时间和timeout_all配置
@@ -558,24 +575,29 @@ func (s *CollectorService) ExecuteTask(ctx context.Context, request *CollectRequ
 		return response, nil
 	}
 
-	if err != nil {
-		response.Success = false
-		response.Error = err.Error()
-		task.Status = model.TaskStatusFailed
-		task.ErrorMsg = err.Error()
+    if err != nil {
+        response.Success = false
+        response.Error = err.Error()
+        task.Status = model.TaskStatusFailed
+        task.ErrorMsg = err.Error()
 
-		// 记录错误日志
-		s.logTaskError(request.TaskID, err.Error())
-	} else {
-		response.Success = true
-		response.Results = results
-		task.Status = model.TaskStatusSuccess
+        // 记录错误日志
+        s.logTaskError(request.TaskID, err.Error())
+    } else {
+        response.Success = true
+        response.Results = results
+        task.Status = model.TaskStatusSuccess
 
-		// 序列化结果
-		if resultData, err := json.Marshal(results); err == nil {
-			task.Result = string(resultData)
-		}
-	}
+        // 序列化结果
+        if resultData, err := json.Marshal(results); err == nil {
+            task.Result = string(resultData)
+        }
+    }
+
+    // 将命令执行结果以 task_trace 形式写入按任务日志文件
+    deviceLabel := strings.TrimSpace(request.DeviceName)
+    if deviceLabel == "" { deviceLabel = strings.TrimSpace(request.DeviceIP) }
+    s.appendCommandLogs(request.TaskID, deviceLabel, results)
 
 	// 更新任务状态（以毫秒记录执行时长）
 	task.Duration = response.Duration.Milliseconds()
@@ -596,7 +618,7 @@ func (s *CollectorService) executeSSHCollection(ctx context.Context, request *Co
 	if port < 1 || port > 65535 {
 		port = 22
 	}
-	s.logTaskInfo(request.TaskID, fmt.Sprintf("Starting SSH collection for %s:%d", request.DeviceIP, port))
+    s.logTaskInfo(request.TaskID, fmt.Sprintf("Starting SSH collection for %s:%d", request.DeviceIP, port))
 
 	// 计算有效超时（与 ExecuteTask 逻辑保持一致）
 	effTimeoutSec := 30
@@ -618,19 +640,20 @@ func (s *CollectorService) executeSSHCollection(ctx context.Context, request *Co
 		devTimeoutSec = *request.DeviceTimeout
 	}
 	// 统一交互入口：通过 InteractBasic 执行并完成预命令与行过滤
-	execReq := &ExecRequest{
-		DeviceIP:         request.DeviceIP,
-		Port:             port,
-		DeviceName:       request.DeviceName,
-		DevicePlatform:   request.DevicePlatform,
-		CollectProtocol:  request.CollectProtocol,
-		UserName:         request.UserName,
-		Password:         request.Password,
-		EnablePassword:   request.EnablePassword,
-		TaskTimeoutSec:   effTimeoutSec,
-		DeviceTimeoutSec: devTimeoutSec,
-		TaskID:           request.TaskID,
-	}
+    execReq := &ExecRequest{
+        DeviceIP:         request.DeviceIP,
+        Port:             port,
+        DeviceName:       request.DeviceName,
+        DevicePlatform:   request.DevicePlatform,
+        CollectProtocol:  request.CollectProtocol,
+        UserName:         request.UserName,
+        Password:         request.Password,
+        EnablePassword:   request.EnablePassword,
+        TaskTimeoutSec:   effTimeoutSec,
+        DeviceTimeoutSec: devTimeoutSec,
+        TaskID:           request.TaskID,
+        LogType:          "collection",
+    }
 
 	// 使用请求中的 retries 参数进行重试（至少执行一次）
 	attempts := retries
@@ -913,24 +936,94 @@ func (s *CollectorService) updateTask(task *model.Task) error {
 
 // logTaskInfo 记录任务信息日志
 func (s *CollectorService) logTaskInfo(taskID, message string) {
-	logger.Info("Task info", "task_id", taskID, "message", message)
-	s.saveTaskLog(taskID, "INFO", message)
+    logger.WithFields(map[string]interface{}{
+        "log_type": "collection",
+        "task_id":  taskID,
+        "message":  message,
+    }).Info("Task info")
+    s.saveTaskLog(taskID, "INFO", message)
 }
 
 // logTaskError 记录任务错误日志
 func (s *CollectorService) logTaskError(taskID, message string) {
-	logger.Error("Task error", "task_id", taskID, "message", message)
-	s.saveTaskLog(taskID, "ERROR", message)
+    logger.WithFields(map[string]interface{}{
+        "log_type": "collection",
+        "task_id":  taskID,
+        "message":  message,
+    }).Error("Task error")
+    s.saveTaskLog(taskID, "ERROR", message)
 }
 
 // logTaskWarn 记录任务警告日志
 func (s *CollectorService) logTaskWarn(taskID, message string) {
-	logger.Warn("Task warn", "task_id", taskID, "message", message)
-	s.saveTaskLog(taskID, "WARN", message)
+    logger.WithFields(map[string]interface{}{
+        "log_type": "collection",
+        "task_id":  taskID,
+        "message":  message,
+    }).Warn("Task warn")
+    s.saveTaskLog(taskID, "WARN", message)
 }
 
 // saveTaskLog 保存任务日志
 func (s *CollectorService) saveTaskLog(taskID, level, message string) {
-	// 暂停任务日志入库：保留日志输出（logTask* 已记录），此处不重复写日志避免噪声
-	// 删除冗余的 return 语句
+    // 追加一条结构化日志到按任务文件
+    s.mutex.RLock()
+    taskCtx, ok := s.tasks[taskID]
+    s.mutex.RUnlock()
+    if !ok || taskCtx == nil || strings.TrimSpace(taskCtx.LogFilePath) == "" {
+        return
+    }
+    // 组装与全局日志相似的 JSON 行
+    line := map[string]interface{}{
+        "time":     time.Now().Format("2006-01-02 15:04:05"),
+        "level":    strings.ToLower(level),
+        "log_type": "collection",
+        "task_id":  strings.TrimSpace(taskID),
+        "msg":      message,
+    }
+    data, err := json.Marshal(line)
+    if err != nil {
+        return
+    }
+    f, err := os.OpenFile(taskCtx.LogFilePath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+    if err != nil { return }
+    defer f.Close()
+    _, _ = f.Write(append(data, '\n'))
+}
+
+// appendCommandLogs 将命令执行结果以 task_trace 的结构化日志写入按任务文件
+func (s *CollectorService) appendCommandLogs(taskID, deviceLabel string, results []*CommandResultView) {
+    if len(results) == 0 { return }
+    s.mutex.RLock()
+    taskCtx, ok := s.tasks[taskID]
+    s.mutex.RUnlock()
+    if !ok || taskCtx == nil || strings.TrimSpace(taskCtx.LogFilePath) == "" { return }
+    f, err := os.OpenFile(taskCtx.LogFilePath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+    if err != nil { return }
+    defer f.Close()
+    dname := strings.TrimSpace(deviceLabel)
+    if dname == "" { dname = "<unknown>" }
+    for _, r := range results {
+        if r == nil { continue }
+        execOK := r.ExitCode == 0 && strings.TrimSpace(r.Error) == ""
+        execResult := "失败"
+        if execOK { execResult = "成功" }
+        cmdName := strings.TrimSpace(r.Command)
+        if cmdName == "" { cmdName = "<unknown>" }
+        line := map[string]interface{}{
+            "time":        time.Now().Format("2006-01-02 15:04:05"),
+            "level":       "info",
+            "log_type":    "collection",
+            "task_id":     strings.TrimSpace(taskID),
+            "device":      dname,
+            "command":     cmdName,
+            "status":      execResult,
+            "exit_code":   r.ExitCode,
+            "duration_ms": r.DurationMS,
+            "msg":         fmt.Sprintf("task_trace: device %s 执行 %s", dname, cmdName),
+        }
+        if data, err := json.Marshal(line); err == nil {
+            _, _ = f.Write(append(data, '\n'))
+        }
+    }
 }

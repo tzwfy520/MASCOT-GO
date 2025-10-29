@@ -71,10 +71,11 @@ type DeployDevice struct {
 
 // DeployFastResponse 响应
 type DeployFastResponse struct {
-	TaskID   string               `json:"task_id"`
-	TaskName string               `json:"task_name"`
-	Results  []DeployDeviceResult `json:"results"`
-	Duration string               `json:"duration"`
+    TaskID   string               `json:"task_id"`
+    TaskName string               `json:"task_name"`
+    Results  []DeployDeviceResult `json:"results"`
+    Duration string               `json:"duration"`
+    LogFilePath string            `json:"log_file_path,omitempty"`
 }
 
 // 单设备结果
@@ -129,7 +130,10 @@ func (s *DeployService) getDefaults(platform string) (config.PlatformDefaultsCon
 // Deploy 执行下发
 func (s *DeployService) Deploy(ctx context.Context, req *DeployFastRequest) (*DeployFastResponse, error) {
 	start := time.Now()
-	resp := &DeployFastResponse{TaskID: req.TaskID, TaskName: req.TaskName, Results: make([]DeployDeviceResult, 0, len(req.Devices))}
+    resp := &DeployFastResponse{TaskID: req.TaskID, TaskName: req.TaskName, Results: make([]DeployDeviceResult, 0, len(req.Devices))}
+    if s != nil && s.cfg != nil {
+        resp.LogFilePath = strings.TrimSpace(s.cfg.Log.FilePath)
+    }
 	statusEnable := req.StatusCheckEnable
 
 	// 设备循环

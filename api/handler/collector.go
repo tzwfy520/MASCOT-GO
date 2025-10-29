@@ -485,20 +485,21 @@ func (h *CollectorHandler) BatchExecuteCustomer(c *gin.Context) {
 				}
 			}
 
-			responses[i] = map[string]interface{}{
-				"device_ip":       d.DeviceIP,
-				"port":            d.Port,
-				"device_name":     d.DeviceName,
-				"device_platform": d.DevicePlatform,
-				"task_id":         resp.TaskID,
-				"success":         resp.Success,
-				"results":         resp.Results,
-				"error":           resp.Error,
-				"duration_ms":     resp.DurationMS,
-				"timestamp":       resp.Timestamp,
-			}
-			return nil
-		})
+            responses[i] = map[string]interface{}{
+                "device_ip":       d.DeviceIP,
+                "port":            d.Port,
+                "device_name":     d.DeviceName,
+                "device_platform": d.DevicePlatform,
+                "task_id":         resp.TaskID,
+                "success":         resp.Success,
+                "results":         resp.Results,
+                "error":           resp.Error,
+                "duration_ms":     resp.DurationMS,
+                "timestamp":       resp.Timestamp,
+                "log_file_path":   resp.LogFilePath,
+            }
+            return nil
+        })
 	}
 
 	_ = g.Wait()
@@ -665,20 +666,21 @@ func (h *CollectorHandler) BatchExecuteSystem(c *gin.Context) {
 				}
 			}
 
-			responses[i] = map[string]interface{}{
-				"device_ip":       d.DeviceIP,
-				"port":            d.Port,
-				"device_name":     d.DeviceName,
-				"device_platform": d.DevicePlatform,
-				"task_id":         resp.TaskID,
-				"success":         resp.Success,
-				"results":         resp.Results,
-				"error":           resp.Error,
-				"duration_ms":     resp.DurationMS,
-				"timestamp":       resp.Timestamp,
-			}
-			return nil
-		})
+            responses[i] = map[string]interface{}{
+                "device_ip":       d.DeviceIP,
+                "port":            d.Port,
+                "device_name":     d.DeviceName,
+                "device_platform": d.DevicePlatform,
+                "task_id":         resp.TaskID,
+                "success":         resp.Success,
+                "results":         resp.Results,
+                "error":           resp.Error,
+                "duration_ms":     resp.DurationMS,
+                "timestamp":       resp.Timestamp,
+                "log_file_path":   resp.LogFilePath,
+            }
+            return nil
+        })
 	}
 
 	_ = g.Wait()

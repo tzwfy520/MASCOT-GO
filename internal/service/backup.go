@@ -1,14 +1,15 @@
 package service
 
 import (
-	"bytes"
-	"context"
-	"crypto/sha256"
-	"encoding/hex"
-	"fmt"
-	"net"
-	"net/http"
-	"os"
+    "bytes"
+    "context"
+    "crypto/sha256"
+    "encoding/json"
+    "encoding/hex"
+    "fmt"
+    "net"
+    "net/http"
+    "os"
 	"path"
 	"path/filepath"
 	"regexp"
@@ -87,10 +88,11 @@ type DeviceBackupResponse struct {
 
 // BackupBatchResponse 批量备份响应
 type BackupBatchResponse struct {
-	Code    string                 `json:"code"`
-	Message string                 `json:"message"`
-	Data    []DeviceBackupResponse `json:"data"`
-	Total   int                    `json:"total"`
+    Code    string                 `json:"code"`
+    Message string                 `json:"message"`
+    Data    []DeviceBackupResponse `json:"data"`
+    Total   int                    `json:"total"`
+    LogFilePath string             `json:"log_file_path,omitempty"`
 }
 
 // ==== 合并自 storage_writer.go：存储写入器实现 ====
@@ -650,9 +652,16 @@ func (s *BackupService) ExecuteBatch(ctx context.Context, req *BackupBatchReques
 	if strings.TrimSpace(req.TaskID) == "" {
 		return nil, fmt.Errorf("task_id is required")
 	}
-	if len(req.Devices) == 0 {
-		return nil, fmt.Errorf("devices is empty")
-	}
+    if len(req.Devices) == 0 {
+        return nil, fmt.Errorf("devices is empty")
+    }
+
+    // 创建按任务日志文件：logs/backup/<task_id>_<YYYYMMDD_HHMMSS>.log
+    logDir := filepath.Join("logs", "backup")
+    _ = os.MkdirAll(logDir, 0o755)
+    logName := fmt.Sprintf("%s_%s.log", strings.TrimSpace(req.TaskID), time.Now().Format("20060102_150405"))
+    logFilePath := filepath.Join(logDir, logName)
+    var writeMu sync.Mutex
 
 	// 并发执行各设备备份
 	type item struct {
@@ -713,8 +722,8 @@ func (s *BackupService) ExecuteBatch(ctx context.Context, req *BackupBatchReques
 				Timestamp:      start,
 			}
 
-			// 执行命令
-		execReq := &ExecRequest{
+		// 执行命令
+	execReq := &ExecRequest{
 			DeviceIP:        dev.DeviceIP,
 			Port:            dev.Port,
 			DeviceName:      dev.DeviceName,
@@ -731,6 +740,7 @@ func (s *BackupService) ExecuteBatch(ctx context.Context, req *BackupBatchReques
 				return s.effectiveTimeout(req.TaskTimeout, dev.DevicePlatform)
 			}(),
 			TaskID:          req.TaskID,
+			LogType:         "backup",
 		}
 
 			// 支持有限重试（请求优先，平台默认回退）
@@ -746,14 +756,40 @@ func (s *BackupService) ExecuteBatch(ctx context.Context, req *BackupBatchReques
 					time.Sleep(300 * time.Millisecond)
 				}
 			}
-			if err != nil {
-				resp.Success = false
-				resp.Error = err.Error()
-				resp.DurationMS = time.Since(start).Milliseconds()
-				out[idx].resp = resp
-				wg.Done()
-				return
-			}
+            if err != nil {
+                resp.Success = false
+                resp.Error = err.Error()
+                resp.DurationMS = time.Since(start).Milliseconds()
+                // 记录登录失败到按任务日志文件
+                writeMu.Lock()
+                func() {
+                    f, e := os.OpenFile(logFilePath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+                    if e == nil {
+                        defer f.Close()
+                        dlabel := strings.TrimSpace(dev.DeviceName)
+                        if dlabel == "" { dlabel = strings.TrimSpace(dev.DeviceIP) }
+                        line := map[string]interface{}{
+                            "time":     time.Now().Format("2006-01-02 15:04:05"),
+                            "level":    "error",
+                            "log_type": "backup",
+                            "task_id":  strings.TrimSpace(req.TaskID),
+                            "device":   dlabel,
+                            "command":  "__login__",
+                            "status":   "失败",
+                            "exit_code": -1,
+                            "duration_ms": resp.DurationMS,
+                            "msg":      fmt.Sprintf("task_trace: device %s 登录失败", dlabel),
+                        }
+                        if data, e2 := json.Marshal(line); e2 == nil {
+                            _, _ = f.Write(append(data, '\n'))
+                        }
+                    }
+                }()
+                writeMu.Unlock()
+                out[idx].resp = resp
+                wg.Done()
+                return
+            }
 
 			// 写入存储并组装响应
 			date := time.Now().Format("20060102")
@@ -765,13 +801,13 @@ func (s *BackupService) ExecuteBatch(ctx context.Context, req *BackupBatchReques
 				backend = "local"
 			}
 
-			resp.Results = make([]CommandBackupResult, 0, len(results))
-			for _, r := range results {
-				// 预处理命令不落盘，仅记录输出（例如 enable、关闭分页等）
-				isPre := s.isPreCommand(dev.DevicePlatform, r.Command)
+            resp.Results = make([]CommandBackupResult, 0, len(results))
+            for _, r := range results {
+                // 预处理命令不落盘，仅记录输出（例如 enable、关闭分页等）
+                isPre := s.isPreCommand(dev.DevicePlatform, r.Command)
 
-				stored := []StoredObject{}
-				storeErrMsg := ""
+                stored := []StoredObject{}
+                storeErrMsg := ""
 				// 当 aggregate_only 启用时，跳过逐命令写入，仅生成聚合文件
 				if !isPre && !s.config.Backup.Aggregate.AggregateOnly {
 					// 仅对采集命令进行存储
@@ -795,12 +831,42 @@ func (s *BackupService) ExecuteBatch(ctx context.Context, req *BackupBatchReques
 					}
 				}
 
-				resp.Results = append(resp.Results, CommandBackupResult{
-					Command:   r.Command,
-					RawOutput: r.Output,
-					RawOutputLines: func() []string {
-						if r.Output == "" {
-							return []string{}
+                // 记录命令执行 task_trace 到按任务日志文件
+                writeMu.Lock()
+                func() {
+                    f, e := os.OpenFile(logFilePath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+                    if e == nil {
+                        defer f.Close()
+                        dlabel := strings.TrimSpace(dev.DeviceName)
+                        if dlabel == "" { dlabel = strings.TrimSpace(dev.DeviceIP) }
+                        execOK := r.ExitCode == 0 && strings.TrimSpace(r.Error) == "" && storeErrMsg == ""
+                        status := "失败"
+                        if execOK { status = "成功" }
+                        line := map[string]interface{}{
+                            "time":        time.Now().Format("2006-01-02 15:04:05"),
+                            "level":       "info",
+                            "log_type":    "backup",
+                            "task_id":     strings.TrimSpace(req.TaskID),
+                            "device":      dlabel,
+                            "command":     strings.TrimSpace(r.Command),
+                            "status":      status,
+                            "exit_code":   r.ExitCode,
+                            "duration_ms": r.Duration.Milliseconds(),
+                            "msg":         fmt.Sprintf("task_trace: device %s 执行 %s", dlabel, strings.TrimSpace(r.Command)),
+                        }
+                        if data, e2 := json.Marshal(line); e2 == nil {
+                            _, _ = f.Write(append(data, '\n'))
+                        }
+                    }
+                }()
+                writeMu.Unlock()
+
+                resp.Results = append(resp.Results, CommandBackupResult{
+                    Command:   r.Command,
+                    RawOutput: r.Output,
+                    RawOutputLines: func() []string {
+                        if r.Output == "" {
+                            return []string{}
 						}
 						return strings.Split(r.Output, "\n")
 					}(),
@@ -901,12 +967,13 @@ func (s *BackupService) ExecuteBatch(ctx context.Context, req *BackupBatchReques
 	wg.Wait()
 
 	// 汇总响应
-	final := &BackupBatchResponse{
-		Code:    "SUCCESS",
-		Message: "batch backup executed",
-		Data:    make([]DeviceBackupResponse, 0, len(out)),
-		Total:   len(out),
-	}
+final := &BackupBatchResponse{
+    Code:    "SUCCESS",
+    Message: "batch backup executed",
+    Data:    make([]DeviceBackupResponse, 0, len(out)),
+    Total:   len(out),
+    LogFilePath: logFilePath,
+}
 	anyFail := false
 	for _, it := range out {
 		final.Data = append(final.Data, it.resp)
