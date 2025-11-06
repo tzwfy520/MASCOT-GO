@@ -169,43 +169,33 @@ type LocalStorageWriter struct {
 }
 
 func (w *LocalStorageWriter) Write(ctx context.Context, meta StorageMeta, content string, contentType string) (StoredObject, error) {
-	baseDir := strings.TrimSpace(w.cfg.Backup.Local.BaseDir)
-	if baseDir == "" {
-		baseDir = "./data/backups"
-	}
+    baseDir := strings.TrimSpace(w.cfg.Backup.Local.BaseDir)
+    if baseDir == "" {
+        baseDir = "./data/backups"
+    }
 
-	// 层级：baseDir / backup.prefix / local.prefix / save_dir / device / date / taskID
-	parts := []string{baseDir}
-	if p := strings.TrimSpace(w.cfg.Backup.Prefix); p != "" {
-		parts = append(parts, p)
-	}
-	if p := strings.TrimSpace(w.cfg.Backup.Local.Prefix); p != "" {
-		parts = append(parts, p)
-	}
-	if sd := strings.TrimSpace(meta.SaveDir); sd != "" {
-		parts = append(parts, sd)
-	}
+    // 层级：baseDir / backup.prefix / local.prefix / save_dir / device / taskID
+    parts := []string{baseDir}
+    if p := strings.TrimSpace(w.cfg.Backup.Prefix); p != "" {
+        parts = append(parts, p)
+    }
+    if p := strings.TrimSpace(w.cfg.Backup.Local.Prefix); p != "" {
+        parts = append(parts, p)
+    }
+    if sd := strings.TrimSpace(meta.SaveDir); sd != "" {
+        parts = append(parts, sd)
+    }
 
-	deviceLabel := strings.TrimSpace(meta.DeviceName)
-	if deviceLabel == "" {
-		deviceLabel = strings.TrimSpace(meta.DeviceIP)
-	}
-	deviceLabel = slug(deviceLabel)
+    deviceLabel := strings.TrimSpace(meta.DeviceName)
+    if deviceLabel == "" {
+        deviceLabel = strings.TrimSpace(meta.DeviceIP)
+    }
+    deviceLabel = slug(deviceLabel)
 
-	parts = append(parts, deviceLabel)
-	// 目录层增加统一的设备任务开始时间，例如 20251016_145830
-	datePart := strings.TrimSpace(meta.DateYYYYMMDD)
-	if datePart == "" {
-		datePart = time.Now().Format("20060102")
-	}
-	timePart := strings.TrimSpace(meta.TimeHHMMSS)
-	if timePart == "" {
-		timePart = time.Now().Format("150405")
-	}
-	parts = append(parts, fmt.Sprintf("%s_%s", datePart, timePart))
-	if tid := strings.TrimSpace(meta.TaskID); tid != "" {
-		parts = append(parts, tid)
-	}
+    parts = append(parts, deviceLabel)
+    if tid := strings.TrimSpace(meta.TaskID); tid != "" {
+        parts = append(parts, tid)
+    }
 
 	dirPath := filepath.Join(parts...)
 
@@ -333,24 +323,15 @@ func (w *MinioStorageWriter) Write(ctx context.Context, meta StorageMeta, conten
 	if sd := strings.TrimSpace(meta.SaveDir); sd != "" {
 		parts = append(parts, sd)
 	}
-	deviceLabel := strings.TrimSpace(meta.DeviceName)
-	if deviceLabel == "" {
-		deviceLabel = strings.TrimSpace(meta.DeviceIP)
-	}
-	deviceLabel = slug(deviceLabel)
-	parts = append(parts, deviceLabel)
-	datePart := strings.TrimSpace(meta.DateYYYYMMDD)
-	if datePart == "" {
-		datePart = time.Now().Format("20060102")
-	}
-	timePart := strings.TrimSpace(meta.TimeHHMMSS)
-	if timePart == "" {
-		timePart = time.Now().Format("150405")
-	}
-	parts = append(parts, fmt.Sprintf("%s_%s", datePart, timePart))
-	if tid := strings.TrimSpace(meta.TaskID); tid != "" {
-		parts = append(parts, tid)
-	}
+    deviceLabel := strings.TrimSpace(meta.DeviceName)
+    if deviceLabel == "" {
+        deviceLabel = strings.TrimSpace(meta.DeviceIP)
+    }
+    deviceLabel = slug(deviceLabel)
+    parts = append(parts, deviceLabel)
+    if tid := strings.TrimSpace(meta.TaskID); tid != "" {
+        parts = append(parts, tid)
+    }
 
 	// 文件名：命令 slug 或显式文件名（与本地规则一致）
 	base := slug(meta.CommandSlug)
@@ -643,15 +624,17 @@ func (s *BackupService) Stop() error {
 
 // ExecuteBatch 执行批量备份
 func (s *BackupService) ExecuteBatch(ctx context.Context, req *BackupBatchRequest) (*BackupBatchResponse, error) {
-	if !s.running {
-		return nil, fmt.Errorf("backup service is not running")
-	}
-	if req == nil {
-		return nil, fmt.Errorf("nil request")
-	}
-	if strings.TrimSpace(req.TaskID) == "" {
-		return nil, fmt.Errorf("task_id is required")
-	}
+    if !s.running {
+        return nil, fmt.Errorf("backup service is not running")
+    }
+    if req == nil {
+        return nil, fmt.Errorf("nil request")
+    }
+    // 防傻机制：task_id 为空时使用当前时间戳（yyyyMMddHHmm）作为 task_id
+    if strings.TrimSpace(req.TaskID) == "" {
+        req.TaskID = time.Now().Format("200601021504")
+        logger.Warn("empty task_id; using timestamp fallback", "task_id", req.TaskID)
+    }
     if len(req.Devices) == 0 {
         return nil, fmt.Errorf("devices is empty")
     }
