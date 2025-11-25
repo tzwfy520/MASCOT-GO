@@ -115,8 +115,7 @@
       "results": [
         {
           "command": "show running-config",
-          "raw_output": "Building configuration...\n...",
-          "raw_output_lines": ["Building configuration...", "..."],
+          "raw_output": "pre-view: Building configuration...\n...",
           "stored_objects": [
             {
               "uri": "file:///data/backups/configs/switch-01/20241016_143022/backup-001/show-running-config.txt",
@@ -171,12 +170,13 @@
 | 字段名 | 类型 | 描述 |
 |--------|------|------|
 | `command` | string | 执行的命令 |
-| `raw_output` | string | 命令原始输出 |
-| `raw_output_lines` | array[string] | 按行分割的输出 |
+| `raw_output` | string | 原始输出预览（最多 5 行，以 `pre-view: ` 前缀） |
 | `stored_objects` | array | 存储对象信息列表 |
 | `exit_code` | integer | 命令退出码 |
 | `duration_ms` | integer | 命令执行时间（毫秒） |
 | `error` | string | 命令级错误信息 |
+
+说明：`raw_output` 仅返回前 5 行的预览文本，完整原始输出已写入存储对象，可通过 `stored_objects.uri` 下载查看。
 
 **存储对象结构**
 

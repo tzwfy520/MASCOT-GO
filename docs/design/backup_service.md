@@ -102,8 +102,7 @@ backup:
       "results": [
         {
           "command": "show version",
-          "raw_output": "...",
-          "raw_output_lines": ["..."],
+          "raw_output": "pre-view: ...",
           "stored_objects": [
             {
               "uri": "file:///backups/system_auto/ios-edge-1/20251016/T-2001/show-version.txt",
@@ -124,6 +123,8 @@ backup:
   "total": 1
 }
 ```
+
+说明：为减少响应体体积与前端渲染负担，命令项的 `raw_output` 仅提供前 5 行的预览文本，统一以 `pre-view: ` 前缀标识；完整输出已经按对象存储写入，可通过 `stored_objects.uri` 获取。
 
 **错误模型**
 - 设备级错误聚合在 `device.error`，命令级错误在 `results[i].error`；服务级错误使用 `code=ERROR` 与详细 `message`。
