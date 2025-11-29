@@ -73,26 +73,27 @@ type CollectResponse struct {
 
 // 内置交互默认值结构（替代原 addone/interact）
 type platformInteractDefaults struct {
-	Timeout           int
-	Retries           int
-	Threads           int
-	Concurrent        int
-	PromptSuffixes    []string
-	CommandIntervalMS int
-	AutoInteractions  []struct{ ExpectOutput, AutoSend string }
-	ErrorHints        []string
-	SkipDelayedEcho   bool
-	// 交互匹配选项（平台 interact 配置）
-	InteractCaseInsensitive bool
-	InteractTrimSpace       bool
-	// 新增：交互时序与节奏参数
-	CommandTimeoutSec        int
-	QuietAfterMS             int
-	QuietPollIntervalMS      int
-	EnablePasswordFallbackMS int
-	PromptInducerIntervalMS  int
-	PromptInducerMaxCount    int
-	ExitPauseMS              int
+    Timeout           int
+    Retries           int
+    Threads           int
+    Concurrent        int
+    PromptSuffixes    []string
+    CommandIntervalMS int
+    AutoInteractions  []struct{ ExpectOutput, AutoSend string }
+    ErrorHints        []string
+    SkipDelayedEcho   bool
+    // 交互匹配选项（平台 interact 配置）
+    InteractCaseInsensitive bool
+    InteractTrimSpace       bool
+    // 新增：交互时序与节奏参数
+    CommandTimeoutSec        int
+    QuietAfterMS             int
+    QuietPollIntervalMS      int
+    EnablePasswordFallbackMS int
+    PromptInducerIntervalMS  int
+    PromptInducerMaxCount    int
+    ExitPauseMS              int
+    LongOutputCommands       []string
 }
 
 // getPlatformDefaults 仅从配置读取平台默认，若平台缺失则兜底使用 default
@@ -100,21 +101,24 @@ func getPlatformDefaults(platform string) platformInteractDefaults {
 	p := strings.TrimSpace(strings.ToLower(platform))
 	base := platformInteractDefaults{}
 	if cfg := config.Get(); cfg != nil {
-		if dd, ok := cfg.Collector.DeviceDefaults[p]; ok {
-			// 平台超时（优先使用嵌套 timeout.timeout_all）
-			if dd.Timeout.TimeoutAll > 0 {
-				base.Timeout = dd.Timeout.TimeoutAll
-			}
-			if len(dd.PromptSuffixes) > 0 {
-				base.PromptSuffixes = dd.PromptSuffixes
-			}
-			base.SkipDelayedEcho = dd.SkipDelayedEcho
-			// 优先使用平台嵌套 interact，其次兼容旧字段
-			if len(dd.Interact.ErrorHints) > 0 {
-				base.ErrorHints = dd.Interact.ErrorHints
-			} else if len(dd.ErrorHints) > 0 {
-				base.ErrorHints = dd.ErrorHints
-			}
+        if dd, ok := cfg.Collector.DeviceDefaults[p]; ok {
+            // 平台超时（优先使用嵌套 timeout.timeout_all）
+            if dd.Timeout.TimeoutAll > 0 {
+                base.Timeout = dd.Timeout.TimeoutAll
+            }
+            if len(dd.PromptSuffixes) > 0 {
+                base.PromptSuffixes = dd.PromptSuffixes
+            }
+            base.SkipDelayedEcho = dd.SkipDelayedEcho
+            if len(dd.LongOutputCommands) > 0 {
+                base.LongOutputCommands = dd.LongOutputCommands
+            }
+            // 优先使用平台嵌套 interact，其次兼容旧字段
+            if len(dd.Interact.ErrorHints) > 0 {
+                base.ErrorHints = dd.Interact.ErrorHints
+            } else if len(dd.ErrorHints) > 0 {
+                base.ErrorHints = dd.ErrorHints
+            }
 			if len(dd.Interact.AutoInteractions) > 0 {
 				mapped := make([]struct{ ExpectOutput, AutoSend string }, 0, len(dd.Interact.AutoInteractions))
 				for _, ai := range dd.Interact.AutoInteractions {
@@ -172,20 +176,23 @@ func getPlatformDefaults(platform string) platformInteractDefaults {
 			} else if dd.ExitPauseMS > 0 {
 				base.ExitPauseMS = dd.ExitPauseMS
 			}
-		} else if dd, ok := cfg.Collector.DeviceDefaults["default"]; ok {
-			// 平台未命中时，使用 default 平台的配置与嵌套 timeout
-			if dd.Timeout.TimeoutAll > 0 {
-				base.Timeout = dd.Timeout.TimeoutAll
-			}
-			if len(dd.PromptSuffixes) > 0 {
-				base.PromptSuffixes = dd.PromptSuffixes
-			}
-			base.SkipDelayedEcho = dd.SkipDelayedEcho
-			if len(dd.Interact.ErrorHints) > 0 {
-				base.ErrorHints = dd.Interact.ErrorHints
-			} else if len(dd.ErrorHints) > 0 {
-				base.ErrorHints = dd.ErrorHints
-			}
+        } else if dd, ok := cfg.Collector.DeviceDefaults["default"]; ok {
+            // 平台未命中时，使用 default 平台的配置与嵌套 timeout
+            if dd.Timeout.TimeoutAll > 0 {
+                base.Timeout = dd.Timeout.TimeoutAll
+            }
+            if len(dd.PromptSuffixes) > 0 {
+                base.PromptSuffixes = dd.PromptSuffixes
+            }
+            base.SkipDelayedEcho = dd.SkipDelayedEcho
+            if len(dd.LongOutputCommands) > 0 {
+                base.LongOutputCommands = dd.LongOutputCommands
+            }
+            if len(dd.Interact.ErrorHints) > 0 {
+                base.ErrorHints = dd.Interact.ErrorHints
+            } else if len(dd.ErrorHints) > 0 {
+                base.ErrorHints = dd.ErrorHints
+            }
 			if len(dd.Interact.AutoInteractions) > 0 {
 				mapped := make([]struct{ ExpectOutput, AutoSend string }, 0, len(dd.Interact.AutoInteractions))
 				for _, ai := range dd.Interact.AutoInteractions {

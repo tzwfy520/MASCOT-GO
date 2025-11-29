@@ -71,11 +71,11 @@ type DeployDevice struct {
 
 // DeployFastResponse 响应
 type DeployFastResponse struct {
-    TaskID   string               `json:"task_id"`
-    TaskName string               `json:"task_name"`
-    Results  []DeployDeviceResult `json:"results"`
-    Duration string               `json:"duration"`
-    LogFilePath string            `json:"log_file_path,omitempty"`
+	TaskID      string               `json:"task_id"`
+	TaskName    string               `json:"task_name"`
+	Results     []DeployDeviceResult `json:"results"`
+	Duration    string               `json:"duration"`
+	LogFilePath string               `json:"log_file_path,omitempty"`
 }
 
 // 单设备结果
@@ -130,10 +130,10 @@ func (s *DeployService) getDefaults(platform string) (config.PlatformDefaultsCon
 // Deploy 执行下发
 func (s *DeployService) Deploy(ctx context.Context, req *DeployFastRequest) (*DeployFastResponse, error) {
 	start := time.Now()
-    resp := &DeployFastResponse{TaskID: req.TaskID, TaskName: req.TaskName, Results: make([]DeployDeviceResult, 0, len(req.Devices))}
-    if s != nil && s.cfg != nil {
-        resp.LogFilePath = strings.TrimSpace(s.cfg.Log.FilePath)
-    }
+	resp := &DeployFastResponse{TaskID: req.TaskID, TaskName: req.TaskName, Results: make([]DeployDeviceResult, 0, len(req.Devices))}
+	if s != nil && s.cfg != nil {
+		resp.LogFilePath = strings.TrimSpace(s.cfg.Log.FilePath)
+	}
 	statusEnable := req.StatusCheckEnable
 
 	// 设备循环
@@ -252,8 +252,9 @@ func (s *DeployService) Deploy(ctx context.Context, req *DeployFastRequest) (*De
 				// 新增：用于精确提示符判定
 				DeviceName: strings.TrimSpace(d.DeviceName),
 				// 新增：设备平台用于区分不同平台的处理逻辑
-				DevicePlatform: strings.TrimSpace(d.DevicePlatform),
-				PromptSuffixes: p.PromptSuffixes,
+				DevicePlatform:     strings.TrimSpace(d.DevicePlatform),
+				PromptSuffixes:     p.PromptSuffixes,
+				LongOutputCommands: p.LongOutputCommands,
 			}
 			// 用户下发序列（预命令 + 进入配置模式 + 用户命令 + 退出配置模式）
 			pre := s.getPreCommands(d.DevicePlatform)
@@ -434,6 +435,7 @@ type platformInteract struct {
 	PromptInducerIntervalMS  int
 	PromptInducerMaxCount    int
 	ExitPauseMS              int
+	LongOutputCommands       []string
 }
 
 func (s *DeployService) getPlatformInteract(platform string) platformInteract {
@@ -443,6 +445,9 @@ func (s *DeployService) getPlatformInteract(platform string) platformInteract {
 		return p
 	}
 	p.PromptSuffixes = append([]string{}, dd.PromptSuffixes...)
+	if len(dd.LongOutputCommands) > 0 {
+		p.LongOutputCommands = append([]string{}, dd.LongOutputCommands...)
+	}
 	// 转换配置中的自动交互项到 SSH 类型
 	p.AutoInteractions = make([]ssh.AutoInteraction, 0, len(dd.Interact.AutoInteractions))
 	for _, ai := range dd.Interact.AutoInteractions {
@@ -600,7 +605,7 @@ func (s *DeployService) aggregateDeployLogs(cmds []string, logs []CommandResult)
 	var dur time.Duration
 	var outSB strings.Builder
 	var errSB strings.Builder
-	
+
 	for _, cr := range logs {
 		// 跳过内部错误记录项
 		if strings.TrimSpace(cr.Command) == "__deploy__" {
@@ -609,7 +614,7 @@ func (s *DeployService) aggregateDeployLogs(cmds []string, logs []CommandResult)
 			}
 			continue
 		}
-		
+
 		// 按照 command + output 的格式进行聚合
 		// line1: command
 		// line2: command-output
@@ -617,14 +622,14 @@ func (s *DeployService) aggregateDeployLogs(cmds []string, logs []CommandResult)
 			outSB.WriteString(strings.TrimSpace(cr.Command))
 			outSB.WriteString("\n")
 		}
-		
+
 		if strings.TrimSpace(cr.Output) != "" {
 			outSB.WriteString(cr.Output)
 			if !strings.HasSuffix(cr.Output, "\n") {
 				outSB.WriteString("\n")
 			}
 		}
-		
+
 		// 收集错误信息
 		if strings.TrimSpace(cr.Error) != "" {
 			errSB.WriteString(cr.Error)
@@ -632,7 +637,7 @@ func (s *DeployService) aggregateDeployLogs(cmds []string, logs []CommandResult)
 				errSB.WriteString("\n")
 			}
 		}
-		
+
 		// 累计执行时间
 		if strings.TrimSpace(cr.Elapsed) != "" {
 			if d, e := time.ParseDuration(cr.Elapsed); e == nil {
@@ -640,7 +645,7 @@ func (s *DeployService) aggregateDeployLogs(cmds []string, logs []CommandResult)
 			}
 		}
 	}
-	
+
 	agg.Output = outSB.String()
 	if agg.Error == "" && errSB.Len() > 0 {
 		agg.Error = strings.TrimSuffix(errSB.String(), "\n")

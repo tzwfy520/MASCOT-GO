@@ -77,13 +77,14 @@ type InteractiveOptions struct {
 	CommandIntervalMS    int
 	PerCommandTimeoutSec int
 	QuietAfterMS         int
-	QuietPollIntervalMS  int
-	// enable 密码回退与提示符诱发器
-	EnablePasswordFallbackMS int
-	PromptInducerIntervalMS  int
-	PromptInducerMaxCount    int
-	// 条件退出配置模式
-	ConfigExitConditional bool
+    QuietPollIntervalMS  int
+    // enable 密码回退与提示符诱发器
+    EnablePasswordFallbackMS int
+    PromptInducerIntervalMS  int
+    PromptInducerMaxCount    int
+    // 条件退出配置模式
+    ConfigExitConditional bool
+    LongOutputCommands []string
 }
 
 // AutoInteraction 自动交互对
@@ -920,10 +921,23 @@ StartCommands:
 			enableFallback = time.After(fallbackDelay)
 		}
 		// 针对长输出命令（如 Cisco "show running-config"），禁用静默完成以避免只收首行
-		isLongOutputCmd := func(curr string) bool {
-			c := strings.ToLower(strings.TrimSpace(curr))
-			return strings.HasPrefix(c, "show run") || strings.HasPrefix(c, "show running-config")
-		}
+        isLongOutputCmd := func(curr string) bool {
+            c := strings.ToLower(strings.TrimSpace(curr))
+            if opts != nil && len(opts.LongOutputCommands) > 0 {
+                for _, pat := range opts.LongOutputCommands {
+                    p := strings.ToLower(strings.TrimSpace(pat))
+                    if p != "" {
+                        if strings.HasPrefix(c, p) || c == p {
+                            return true
+                        }
+                    }
+                }
+            }
+            if strings.HasPrefix(c, "show run") || strings.HasPrefix(c, "show running-config") {
+                return true
+            }
+            return false
+        }
 		// 判断是否为Linux平台的sudo命令
 		isLinuxSudoCmd := func(curr string) bool {
 			if opts == nil || opts.DevicePlatform == "" {

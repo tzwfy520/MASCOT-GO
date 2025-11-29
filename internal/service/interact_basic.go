@@ -156,12 +156,15 @@ func (b *InteractBasic) Execute(ctx context.Context, req *ExecRequest, userComma
 	}
 
 	// 构造交互选项，包括 enable 流程与自动交互
-	interactive := &ssh.InteractiveOptions{SkipDelayedEcho: defaults.SkipDelayedEcho}
-	// 新增：用于精确提示符判定
-	interactive.DeviceName = strings.TrimSpace(req.DeviceName)
-	// 新增：设备平台用于区分不同平台的处理逻辑
-	interactive.DevicePlatform = strings.TrimSpace(req.DevicePlatform)
-	interactive.PromptSuffixes = promptSuffixes
+    interactive := &ssh.InteractiveOptions{SkipDelayedEcho: defaults.SkipDelayedEcho}
+    // 新增：用于精确提示符判定
+    interactive.DeviceName = strings.TrimSpace(req.DeviceName)
+    // 新增：设备平台用于区分不同平台的处理逻辑
+    interactive.DevicePlatform = strings.TrimSpace(req.DevicePlatform)
+    interactive.PromptSuffixes = promptSuffixes
+    if len(defaults.LongOutputCommands) > 0 {
+        interactive.LongOutputCommands = defaults.LongOutputCommands
+    }
 	// enable 配置
 	p := strings.ToLower(strings.TrimSpace(req.DevicePlatform))
 	if dd, ok := b.cfg.Collector.DeviceDefaults[p]; ok && dd.EnableRequired {

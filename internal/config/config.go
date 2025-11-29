@@ -526,18 +526,20 @@ type PlatformTimeoutConfig struct {
 
 // PlatformDefaultsConfig 平台默认交互/适配参数
 type PlatformDefaultsConfig struct {
-	PromptSuffixes    []string                `mapstructure:"prompt_suffixes"`
-	DisablePagingCmds []string                `mapstructure:"disable_paging_cmds"`
-	AutoInteractions  []AutoInteractionConfig `mapstructure:"auto_interactions"`
-	ErrorHints        []string                `mapstructure:"error_hints"`
-	SkipDelayedEcho   bool                    `mapstructure:"skip_delayed_echo"`
-	EnableRequired    bool                    `mapstructure:"enable_required"`
+    PromptSuffixes    []string                `mapstructure:"prompt_suffixes"`
+    DisablePagingCmds []string                `mapstructure:"disable_paging_cmds"`
+    AutoInteractions  []AutoInteractionConfig `mapstructure:"auto_interactions"`
+    ErrorHints        []string                `mapstructure:"error_hints"`
+    SkipDelayedEcho   bool                    `mapstructure:"skip_delayed_echo"`
+    EnableRequired    bool                    `mapstructure:"enable_required"`
 
-	OutputFilter OutputFilterConfig `mapstructure:"output_filter"`
+    LongOutputCommands []string `mapstructure:"long_output_commands"`
 
-	Interact InteractConfig `mapstructure:"interact"`
+    OutputFilter OutputFilterConfig `mapstructure:"output_filter"`
 
-	EnableCLI          string `mapstructure:"enable_cli"`
+    Interact InteractConfig `mapstructure:"interact"`
+
+    EnableCLI          string `mapstructure:"enable_cli"`
 	EnableExceptOutput string `mapstructure:"enable_except_output"`
 
 	ConfigModeCLIs []string `mapstructure:"config_mode_clis"`
